@@ -5,25 +5,20 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 
-class DataBaseModel(BaseModel):
-    def to_db_dict(self, action: Literal["create", "update"]) -> dict:
-        data = self.model_dump(mode="json")
-        if action == "create":
-            data["created_at"] = datetime.now()
-        data["updated_at"] = datetime.now()
-        return data
+class Author(BaseModel):
+    full_name: str
+    bio: Optional[str] = None
+    country_of_origin: Optional[str] = None
 
 
-class Author(DataBaseModel):
-    id: UUID = Field(default_factory=uuid4)
+class AuthorUpdate(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     country_of_origin: Optional[str] = None
 
 
-class Book(DataBaseModel):
-    id: UUID = Field(default_factory=uuid4)
-    author_id: Optional[UUID] = None
+class Book(BaseModel):
+    author_id: UUID
     title: str
     isbn: Optional[str] = None
     year_published: Optional[int] = None
@@ -34,14 +29,26 @@ class Book(DataBaseModel):
     file_url: str
 
 
-class Profile(DataBaseModel):
+class BookUpdate(BaseModel):
+    author_id: Optional[UUID] = None
+    title: Optional[str] = None
+    isbn: Optional[str] = None
+    year_published: Optional[int] = None
+    genre: Optional[str] = None
+    edition: Optional[int] = None
+    total_copies: Optional[int] = None
+    cover_url: Optional[str] = None
+    file_url: Optional[str] = None
+
+
+class Profile(BaseModel):
     id: UUID
     full_name: str
     birthdate: date
     role: Literal["admin", "member"]
 
 
-class BookLoan(DataBaseModel):
+class BookLoan(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     profile_id: Optional[UUID] = None
     loaned_at: datetime = Field(default_factory=datetime.now)

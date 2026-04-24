@@ -1,48 +1,122 @@
-from fastapi import FastAPI
+import os
+
+import asyncio
+from datetime import datetime, timezone
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
-from supabase import create_client
+from postgrest.exceptions import APIError
+from supabase import acreate_client, AsyncClient
 
 import config
 from db.models import Author, Book, BookLoan, Profile
-from db.utils import try_get_row_by_id, try_insert_dict_to_table
+from db.models import AuthorUpdate, BookUpdate
 
-supabase_client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
 
 app = FastAPI()
 
 
+async def create_supabase() -> AsyncClient:
+    supabase: AsyncClient = await acreate_client(
+        config.SUPABASE_URL,
+        config.SUPABASE_KEY
+    )
+    return supabase
+
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    return JSONResponse(status_code=500, content={
+        "status": "error",
+        "message": f"Supabase/postgrest error when performing an action in db. {exc.details}",
+        "data": exc.json()
+    })
+
+
 @app.post("/authors")
-def add_author(author_model: Author):
-    db_dict = author_model.to_db_dict(action="create")
-    json_response = try_insert_dict_to_table(supabase_client, "authors", db_dict)
-    return json_response
+async def add_author(
+    author: Author,
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+):
+    """
+    docstring
+    """
+    print(type(supabase_client))
+    print(vars(supabase_client))
+    print(dir(supabase_client))
+    data = author.model_dump(mode="json")
+    # fields 'id', 'created_at' and 'updated_at' use postgres' default values
+    response = await supabase_client.table("authors").insert(data).execute()
+    return JSONResponse(status_code=201, content={
+        "status": "success",
+        "message": f"Author added to db.",
+        "data": response.data
+    })
 
 
 @app.patch("/authors/{author_id}")
-def update_author(author_id: str, author_model: dict):
-    result = try_get_row_by_id(supabase_client, "authors", author_id)
-    if not result.success:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "message": result.message,
-                "data": None,
-            },
-        )
-
-    return json_response
+async def update_author(
+    author_id: UUID,
+    author: AuthorUpdate,
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+):
+    """
+    docstring
+    """
+    data = author.model_dump(mode="json", exclude_unset=True)
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    response = await (
+        supabase_client
+        .table("authors")
+        .update(data)
+        .eq("id", author_id)
+        .execute()
+    )
+    # TODO: depending on the response, validate if the author id really exists (do not run a select query)
+    return JSONResponse(status_code=200, content={
+        "status": "success",
+        "message": f"Updated author (id={author_id}).",
+        "data": response.data
+    })
 
 
 @app.post("/books")
-def add_book(book_model: Book):
-    db_dict = book_model.to_db_dict(action="create")
-    json_response = try_insert_dict_to_table(supabase_client, "books", db_dict)
-    return json_response
+async def add_book(
+    book: Book,
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+):
+    """
+    docstring
+    """
+    data = book.model_dump(mode="json")
+    # fields 'id', 'created_at' and 'updated_at' use postgres' default values
+    response = await supabase_client.table("books").insert(data).execute()
+    return JSONResponse(status_code=201, content={
+        "status": "success",
+        "message": f"Book added to db.",
+        "data": response.data
+    })
 
 
-@app.post("/loans")
-def add_loan(book_loan_model: BookLoan):
-    db_dict = book_loan_model.to_db_dict(action="create")
-    json_response = try_insert_dict_to_table(supabase_client, "book_loans", db_dict)
-    return json_response
+@app.patch("/books/{book_id}")
+async def update_book(
+    book_id: UUID,
+    book: BookUpdate,
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+):
+    data = book.model_dump(mode="json", exclude_unset=True)
+    response = await (
+        supabase_client
+        .table("books")
+        .update(data)
+        .eq("id", book_id)
+        .execute()
+    )
+    # TODO: depending on the response, validate if the author id really exists (do not run a select query)
+    return JSONResponse(status_code=200, content={
+        "status": "success",
+        "message": f"Updated book (id={book_id}).",
+        "data": response.data
+    })
