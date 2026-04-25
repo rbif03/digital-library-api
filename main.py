@@ -1,6 +1,3 @@
-import os
-
-import asyncio
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
@@ -43,9 +40,6 @@ async def add_author(
     """
     docstring
     """
-    print(type(supabase_client))
-    print(vars(supabase_client))
-    print(dir(supabase_client))
     data = author.model_dump(mode="json")
     # fields 'id', 'created_at' and 'updated_at' use postgres' default values
     response = await supabase_client.table("authors").insert(data).execute()
@@ -74,7 +68,13 @@ async def update_author(
         .eq("id", author_id)
         .execute()
     )
-    # TODO: depending on the response, validate if the author id really exists (do not run a select query)
+
+    if not response.data:
+        return JSONResponse(status_code=404, content={
+            "status": "error",
+            "message": f"Author with id = {author_id} does not exist."
+        })
+
     return JSONResponse(status_code=200, content={
         "status": "success",
         "message": f"Updated author (id={author_id}).",
@@ -107,6 +107,7 @@ async def update_book(
     supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
 ):
     data = book.model_dump(mode="json", exclude_unset=True)
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
     response = await (
         supabase_client
         .table("books")
@@ -114,7 +115,13 @@ async def update_book(
         .eq("id", book_id)
         .execute()
     )
-    # TODO: depending on the response, validate if the author id really exists (do not run a select query)
+
+    if not response.data:
+        return JSONResponse(status_code=404, content={
+            "status": "error",
+            "message": f"Book with id = {book_id} does not exist."
+        })
+
     return JSONResponse(status_code=200, content={
         "status": "success",
         "message": f"Updated book (id={book_id}).",
