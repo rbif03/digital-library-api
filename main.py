@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
 from supabase import acreate_client, AsyncClient
@@ -10,6 +10,7 @@ from supabase import acreate_client, AsyncClient
 import config
 from db.models import Author, Book, BookLoan, Profile
 from db.models import AuthorUpdate, BookUpdate
+from schemas.response import OkResp, ErrorResp, get_resp_models
 
 
 app = FastAPI()
@@ -23,107 +24,142 @@ async def create_supabase() -> AsyncClient:
     return supabase
 
 
-@app.exception_handler(APIError)
-async def api_error_handler(request: Request, exc: APIError):
-    return JSONResponse(status_code=500, content={
-        "status": "error",
-        "message": f"Supabase/postgrest error when performing an action in db. {exc.details}",
-        "data": exc.json()
-    })
-
-
-@app.post("/authors")
+@app.post("/authors", status_code=201, responses=get_resp_models(201, 500))
 async def add_author(
     author: Author,
-    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)],
+    response: Response
 ):
     """
     docstring
     """
-    data = author.model_dump(mode="json")
-    # fields 'id', 'created_at' and 'updated_at' use postgres' default values
-    response = await supabase_client.table("authors").insert(data).execute()
-    return JSONResponse(status_code=201, content={
-        "status": "success",
-        "message": f"Author added to db.",
-        "data": response.data
-    })
+    data = author.model_dump(mode="json")  # converts request body to dict
+
+    # Inserts data to db, returns status_code=500 if an error occurs
+    try:
+        supabase_response = await (
+            supabase_client
+            .table("authors")
+            .insert(data)
+            .execute()
+        )
+    except Exception as e:
+        response.status_code = 500
+        return ErrorResp(
+            message="Database error (supabase). {e}"
+        )
+
+    response.status_code = 201
+    return OkResp(
+        message="Author added to database.",
+        data=supabase_response.data
+    )
 
 
-@app.patch("/authors/{author_id}")
+@app.patch("/authors/{author_id}", status_code=200, responses=get_resp_models(200, 500, 404))
 async def update_author(
     author_id: UUID,
     author: AuthorUpdate,
-    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)],
+    response: Response
 ):
     """
     docstring
     """
     data = author.model_dump(mode="json", exclude_unset=True)
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    response = await (
-        supabase_client
-        .table("authors")
-        .update(data)
-        .eq("id", author_id)
-        .execute()
+
+    # Updates db data, returns status_code=500 if an error occurs
+    try:
+        supabase_response = await (
+            supabase_client
+            .table("authors")
+            .update(data)
+            .eq("id", author_id)
+            .execute()
+        )
+    except Exception as e:
+        response.status_code = 500
+        return ErrorResp(
+            message="Database error (supabase). {e}"
+        )
+
+    # If id is not found, returns 404
+    if not supabase_response.data:
+        response.status_code = 404
+        return ErrorResp(
+            message=f"Author with id = {author_id} does not exist."
+        )
+
+    response.status_code = 200
+    return OkResp(
+        message=f"Updated author (id={author_id}).",
+        data=supabase_response.data
     )
 
-    if not response.data:
-        return JSONResponse(status_code=404, content={
-            "status": "error",
-            "message": f"Author with id = {author_id} does not exist."
-        })
 
-    return JSONResponse(status_code=200, content={
-        "status": "success",
-        "message": f"Updated author (id={author_id}).",
-        "data": response.data
-    })
-
-
-@app.post("/books")
+@app.post("/books", status_code=201, responses=get_resp_models(201, 500))
 async def add_book(
     book: Book,
-    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)],
+    response: Response
 ):
     """
     docstring
     """
     data = book.model_dump(mode="json")
     # fields 'id', 'created_at' and 'updated_at' use postgres' default values
-    response = await supabase_client.table("books").insert(data).execute()
-    return JSONResponse(status_code=201, content={
-        "status": "success",
-        "message": f"Book added to db.",
-        "data": response.data
-    })
+    try:
+        supabase_response = await (
+            supabase_client
+            .table("books")
+            .insert(data)
+            .execute()
+        )
+    except Exception as e:
+        response.status_code = 500
+        return ErrorResp(
+            message="Database error (supabase). {e}"
+        )
+
+    response.status_code = 201
+    return OkResp(
+        message=f"Book added to db.",
+        data=supabase_response.data
+    )
 
 
-@app.patch("/books/{book_id}")
+@app.patch("/books/{book_id}", status_code=200, responses=get_resp_models(200, 500, 404))
 async def update_book(
     book_id: UUID,
     book: BookUpdate,
-    supabase_client: Annotated[AsyncClient, Depends(create_supabase)]
+    supabase_client: Annotated[AsyncClient, Depends(create_supabase)],
+    response=Response
 ):
     data = book.model_dump(mode="json", exclude_unset=True)
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    response = await (
-        supabase_client
-        .table("books")
-        .update(data)
-        .eq("id", book_id)
-        .execute()
+    try:
+        supabase_response = await (
+            supabase_client
+            .table("books")
+            .update(data)
+            .eq("id", book_id)
+            .execute()
+        )
+    except Exception as e:
+        response.status_code = 500
+        return ErrorResp(
+            message="Database error (supabase). {e}"
+        )
+
+    if not supabase_response.data:
+        response.status_code = 404
+        return ErrorResp(
+            message=f"Book with id = {book_id} does not exist."
+        )
+
+    response.status_code = 200
+    return OkResp(
+        message=f"Updated book (id={book_id}).",
+        data=supabase_response.data
     )
-
-    if not response.data:
-        return JSONResponse(status_code=404, content={
-            "status": "error",
-            "message": f"Book with id = {book_id} does not exist."
-        })
-
-    return JSONResponse(status_code=200, content={
-        "status": "success",
-        "message": f"Updated book (id={book_id}).",
-        "data": response.data
-    })
