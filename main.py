@@ -2,10 +2,15 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 
-from db.core import DatabaseError, ForeignKeyError, NotFoundError
+from db.core import (
+    DatabaseError,
+    ForeignKeyError,
+    NotFoundError,
+    InvalidSignInCredentialsError,
+)
 from routers.authors import router as author_router
 from routers.books import router as book_router
-
+from routers.signin import router as signin_router
 
 app = FastAPI()
 
@@ -46,5 +51,18 @@ def handle_not_found_error(request: Request, exc: ForeignKeyError):
     )
 
 
+@app.exception_handler(InvalidSignInCredentialsError)
+def handle_database_error(request: Request, exc: DatabaseError):
+    return JSONResponse(
+        status_code=401,
+        content={
+            "status": "error",
+            "message": f"Unauthorized (invalid credentials).",
+            "data": None,
+        },
+    )
+
+
 app.include_router(author_router)
 app.include_router(book_router)
+app.include_router(signin_router)

@@ -13,6 +13,10 @@ class ForeignKeyError(Exception):
     pass
 
 
+class InvalidSignInCredentialsError(Exception):
+    pass
+
+
 def get_supabase_client(url: str, key: str):
     """Factory that returns an async dependency function with url and key baked in."""
 
